@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+course_state.json
+full_history.json
+ba_quest_notes.md
+BA_Quest_Mastery.pdf
+badge.png
+.vscode/
+.idea/
