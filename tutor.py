@@ -1,7 +1,8 @@
 import os
 import subprocess
 import shutil
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import google.api_core.exceptions
 
 SYSTEM_PROMPT = """
@@ -45,14 +46,13 @@ class BATutor:
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.use_fallback = False
         self.fallback_tool = None
+        self.client = None
+        self.model_name = "gemini-1.5-flash"
+        self.total_tokens = 0
         
         if self.api_key:
             try:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel(
-                    model_name="gemini-1.5-flash",
-                    system_instruction=SYSTEM_PROMPT
-                )
+                self.client = genai.Client(api_key=self.api_key)
             except Exception as e:
                 print(f"⚠️ SDK Config Error: {e}. Attempting CLI fallback...")
                 self._init_fallback()
@@ -60,11 +60,9 @@ class BATutor:
             self._init_fallback()
 
     def _init_fallback(self):
-        # Check for gemini-cli
         if shutil.which("gemini") or shutil.which("gemini.cmd"):
             self.use_fallback = True
             self.fallback_tool = "gemini"
-        # Check for claude-code
         elif shutil.which("claude"):
             self.use_fallback = True
             self.fallback_tool = "claude"
@@ -74,7 +72,6 @@ class BATutor:
         full_prompt = f"{SYSTEM_PROMPT}\n\n{prompt}"
         try:
             if self.fallback_tool == "gemini":
-                # Use gemini-cli
                 cmd = ["gemini.cmd"] if os.name == 'nt' else ["gemini"]
                 result = subprocess.run(
                     cmd,
@@ -85,9 +82,7 @@ class BATutor:
                     encoding='utf-8'
                 )
                 return result.stdout.strip() or result.stderr.strip()
-            
             elif self.fallback_tool == "claude":
-                # Use Claude Code (Pipe mode)
                 result = subprocess.run(
                     ["claude", "-p", full_prompt],
                     capture_output=True,
@@ -96,7 +91,6 @@ class BATutor:
                     encoding='utf-8'
                 )
                 return result.stdout.strip()
-            
             return "❌ No API Key and no AI CLI (Gemini/Claude) found on system path."
         except Exception as e:
             return f"❌ Fallback Error: {str(e)}"
@@ -107,23 +101,46 @@ class BATutor:
             if stream:
                 class MockChunk: 
                     def __init__(self, text): self.text = text
+                    @property
+                    def usage_metadata(self): return None
                 return [MockChunk(res)]
             return res
 
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            temperature=0.7
+        )
+
         try:
-            response = self.model.generate_content(prompt, stream=stream)
             if stream:
-                return response
+                # We can't easily update tokens here since it's a generator
+                # The UI will have to handle token updates for streams
+                return self.client.models.generate_content_stream(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config
+                )
+            
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config
+            )
+            
+            if response.usage_metadata:
+                self.total_tokens += response.usage_metadata.total_token_count
+                
             if not response.text:
                 return "❌ AI Error: Empty response from model."
             return response
-        except google.api_core.exceptions.ResourceExhausted:
-            return "⚠️ API quota reached. Your progress is saved locally. Please try again in a few minutes."
-        except google.api_core.exceptions.ServiceUnavailable:
-            return "⚠️ Gemini service is temporarily unavailable. Working offline — your input is saved."
+            
         except Exception as e:
-            if "api_key" in str(e).lower() or "not found" in str(e).lower():
-                # Try fallback on the fly if key was provided but failed
+            err_str = str(e).lower()
+            if "quota" in err_str or "429" in err_str:
+                return "⚠️ API quota reached. Your progress is saved locally. Please try again in a few minutes."
+            if "unavailable" in err_str or "503" in err_str:
+                return "⚠️ Gemini service is temporarily unavailable. Working offline — your input is saved."
+            if "api_key" in err_str or "not found" in err_str:
                 self._init_fallback()
                 if self.use_fallback: return self._call_gemini(prompt, stream)
             return f"❌ AI Error: {str(e)}"
@@ -177,4 +194,7 @@ class BATutor:
         else:
             prompt = f"{context_str}\n\nUser Response: {user_input}\n\nEvaluate and perform 'Mentality Profiling' for the next step. If in Quick Mode, analyze the choice code and the optional comment."
             
-        return self._call_gemini(prompt, stream=stream)
+        res = self._call_gemini(prompt, stream=stream)
+        if stream:
+            return res
+        return res.text if hasattr(res, 'text') else res

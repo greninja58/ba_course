@@ -117,6 +117,9 @@ with st.sidebar:
     # Streak and Token Awareness
     col1, col2 = st.columns(2)
     col1.metric("🔥 Streak", f"{state.get('streak', 1)} Days")
+    
+    # Update total tokens from tutor object
+    state["total_tokens"] = st.session_state.tutor.total_tokens
     col2.metric("🔢 Tokens", f"{state.get('total_tokens', 0):,}")
     
     # XP & Badges
@@ -176,8 +179,7 @@ with st.sidebar:
         st.write(f"🎓 **CAT Prep: {module['cat_skill']}**")
         if st.button("🧠 Quick CAT Question"):
             with st.spinner("Generating question..."):
-                q = st.session_state.tutor.get_cat_question(module['cat_skill'])
-                st.session_state.cat_question = q
+                st.session_state.cat_question = st.session_state.tutor.get_cat_question(module['cat_skill'])
         
         if "cat_question" in st.session_state:
             with st.expander("📝 Practice Question", expanded=True):
@@ -258,6 +260,7 @@ with st.sidebar:
                     "last_visit_date": time.strftime('%Y-%m-%d'),
                     "feedback": []
                 }
+                st.session_state.tutor.total_tokens = 0
                 save_state(st.session_state.state)
                 st.session_state.quest_messages = []
                 st.session_state.ws_messages = []
@@ -285,10 +288,7 @@ with tab1:
             module = SYLLABUS[state["current_module_index"]]
             milestone_data = module["milestones"][state["current_milestone_index"]]
             
-            res = st.session_state.tutor.get_lesson(module["id"], state["current_milestone_index"], milestone_data["title"], state)
-            if hasattr(res, 'usage_metadata'):
-                state["total_tokens"] += res.usage_metadata.total_token_count
-            lesson = res.text if hasattr(res, 'text') else res
+            lesson = st.session_state.tutor.get_lesson(module["id"], state["current_milestone_index"], milestone_data["title"], state)
             st.session_state.quest_messages.append({"role": "assistant", "content": lesson})
             st.rerun()
 
@@ -326,20 +326,15 @@ with tab1:
             
         with st.chat_message("assistant"):
             stream = st.session_state.tutor.send_response(quest_prompt, context, state, stream=True)
-            # st.write_stream doesn't provide token usage, so we'll collect it manually
             full_response = ""
             message_placeholder = st.empty()
             for chunk in stream:
                 full_response += chunk.text
                 message_placeholder.markdown(full_response + "▌")
+                # Update tokens from final chunk
+                if chunk.usage_metadata:
+                    st.session_state.tutor.total_tokens += chunk.usage_metadata.total_token_count
             message_placeholder.markdown(full_response)
-            
-            # Update tokens from last chunk if available (SDK behavior varies)
-            if hasattr(stream, 'usage_metadata'):
-                 state["total_tokens"] += stream.usage_metadata.total_token_count
-            elif hasattr(chunk, 'usage_metadata'): # Sometimes it's in the last chunk
-                 state["total_tokens"] += chunk.usage_metadata.total_token_count
-            
             response = full_response
             
         state.setdefault("interaction_history", []).append({
@@ -368,18 +363,12 @@ with tab1:
                 if not state["infinity_mode"]:
                     next_module = SYLLABUS[state["current_module_index"]]
                     next_milestone = next_module["milestones"][state["current_milestone_index"]]["title"]
-                    res = st.session_state.tutor.get_lesson(next_module["id"], state["current_milestone_index"], next_milestone, state)
-                    if hasattr(res, 'usage_metadata'):
-                        state["total_tokens"] += res.usage_metadata.total_token_count
-                    next_lesson = res.text if hasattr(res, 'text') else res
+                    next_lesson = st.session_state.tutor.get_lesson(next_module["id"], state["current_milestone_index"], next_milestone, state)
                     st.session_state.quest_messages.append({"role": "assistant", "content": next_lesson})
                     st.rerun()
             else:
                 st.toast("🔥 Chaos Managed!", icon="👑")
-                res = st.session_state.tutor.get_lesson(0, 0, "", state, is_infinity=True)
-                if hasattr(res, 'usage_metadata'):
-                        state["total_tokens"] += res.usage_metadata.total_token_count
-                next_lesson = res.text if hasattr(res, 'text') else res
+                next_lesson = st.session_state.tutor.get_lesson(0, 0, "", state, is_infinity=True)
                 st.session_state.quest_messages.append({"role": "assistant", "content": next_lesson})
                 st.rerun()
 
@@ -394,10 +383,7 @@ with tab2:
     col1, col2 = st.columns([6, 1])
     if col2.button("🔄 New Scenario"):
         with st.spinner("Generating..."):
-            res = st.session_state.tutor.get_working_session(st.session_state.state)
-            if hasattr(res, 'usage_metadata'):
-                st.session_state.state["total_tokens"] += res.usage_metadata.total_token_count
-            session_start = res.text if hasattr(res, 'text') else res
+            session_start = st.session_state.tutor.get_working_session(st.session_state.state)
             st.session_state.ws_messages = [{"role": "assistant", "content": session_start}]
             st.session_state.state["working_session_history"] = []
             save_state(st.session_state.state)
@@ -406,10 +392,7 @@ with tab2:
     if not st.session_state.ws_messages:
         if st.button("🛠️ Start Simulation"):
             with st.spinner("Generating scenario..."):
-                res = st.session_state.tutor.get_working_session(st.session_state.state)
-                if hasattr(res, 'usage_metadata'):
-                    st.session_state.state["total_tokens"] += res.usage_metadata.total_token_count
-                session_start = res.text if hasattr(res, 'text') else res
+                session_start = st.session_state.tutor.get_working_session(st.session_state.state)
                 st.session_state.ws_messages.append({"role": "assistant", "content": session_start})
                 st.rerun()
 
@@ -433,13 +416,9 @@ with tab2:
             for chunk in stream:
                 full_response += chunk.text
                 message_placeholder.markdown(full_response + "▌")
+                if chunk.usage_metadata:
+                    st.session_state.tutor.total_tokens += chunk.usage_metadata.total_token_count
             message_placeholder.markdown(full_response)
-            
-            if hasattr(stream, 'usage_metadata'):
-                 state["total_tokens"] += stream.usage_metadata.total_token_count
-            elif hasattr(chunk, 'usage_metadata'):
-                 state["total_tokens"] += chunk.usage_metadata.total_token_count
-            
             response = full_response
             
             # Store in a separate WS history in state
