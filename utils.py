@@ -27,9 +27,13 @@ DEFAULT_STATE = {
 }
 
 def validate_env():
-    """Checks if critical environment variables are set."""
+    """Checks if critical environment variables or fallbacks are set."""
+    import shutil
     if not os.getenv("GEMINI_API_KEY"):
-        return False, "❌ GEMINI_API_KEY not found. Please set it in your .env file."
+        # Check for fallbacks
+        if shutil.which("gemini") or shutil.which("gemini.cmd") or shutil.which("claude"):
+            return True, "⚠️ GEMINI_API_KEY not found. Running in CLI Fallback Mode."
+        return False, "❌ GEMINI_API_KEY not found and no AI CLI (Gemini/Claude) detected."
     return True, ""
 
 def load_state():

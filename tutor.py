@@ -1,4 +1,6 @@
 import os
+import subprocess
+import shutil
 import google.generativeai as genai
 import google.api_core.exceptions
 
@@ -40,14 +42,74 @@ MENTALITY PROFILING:
 
 class BATutor:
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=SYSTEM_PROMPT
-        )
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        self.use_fallback = False
+        self.fallback_tool = None
+        
+        if self.api_key:
+            try:
+                genai.configure(api_key=self.api_key)
+                self.model = genai.GenerativeModel(
+                    model_name="gemini-1.5-flash",
+                    system_instruction=SYSTEM_PROMPT
+                )
+            except Exception as e:
+                print(f"⚠️ SDK Config Error: {e}. Attempting CLI fallback...")
+                self._init_fallback()
+        else:
+            self._init_fallback()
+
+    def _init_fallback(self):
+        # Check for gemini-cli
+        if shutil.which("gemini") or shutil.which("gemini.cmd"):
+            self.use_fallback = True
+            self.fallback_tool = "gemini"
+        # Check for claude-code
+        elif shutil.which("claude"):
+            self.use_fallback = True
+            self.fallback_tool = "claude"
+
+    def _call_external_cli(self, prompt):
+        """Communicates with external AI CLIs as a fallback."""
+        full_prompt = f"{SYSTEM_PROMPT}\n\n{prompt}"
+        try:
+            if self.fallback_tool == "gemini":
+                # Use gemini-cli
+                cmd = ["gemini.cmd"] if os.name == 'nt' else ["gemini"]
+                result = subprocess.run(
+                    cmd,
+                    input=full_prompt,
+                    capture_output=True,
+                    text=True,
+                    shell=True,
+                    encoding='utf-8'
+                )
+                return result.stdout.strip() or result.stderr.strip()
+            
+            elif self.fallback_tool == "claude":
+                # Use Claude Code (Pipe mode)
+                result = subprocess.run(
+                    ["claude", "-p", full_prompt],
+                    capture_output=True,
+                    text=True,
+                    shell=True,
+                    encoding='utf-8'
+                )
+                return result.stdout.strip()
+            
+            return "❌ No API Key and no AI CLI (Gemini/Claude) found on system path."
+        except Exception as e:
+            return f"❌ Fallback Error: {str(e)}"
 
     def _call_gemini(self, prompt, stream=False):
+        if self.use_fallback:
+            res = self._call_external_cli(prompt)
+            if stream:
+                class MockChunk: 
+                    def __init__(self, text): self.text = text
+                return [MockChunk(res)]
+            return res
+
         try:
             response = self.model.generate_content(prompt, stream=stream)
             if stream:
@@ -60,6 +122,10 @@ class BATutor:
         except google.api_core.exceptions.ServiceUnavailable:
             return "⚠️ Gemini service is temporarily unavailable. Working offline — your input is saved."
         except Exception as e:
+            if "api_key" in str(e).lower() or "not found" in str(e).lower():
+                # Try fallback on the fly if key was provided but failed
+                self._init_fallback()
+                if self.use_fallback: return self._call_gemini(prompt, stream)
             return f"❌ AI Error: {str(e)}"
 
     def get_cat_question(self, skill_theme):

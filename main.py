@@ -79,10 +79,12 @@ def display_welcome(state):
 
 def main():
     # 1. Validate Environment
-    valid, error_msg = validate_env()
+    valid, status_msg = validate_env()
     if not valid:
-        console.print(Panel(error_msg, title="❌ Setup Error", border_style="red"))
+        console.print(Panel(status_msg, title="❌ Setup Error", border_style="red"))
         sys.exit(1)
+    elif status_msg:
+        console.print(Panel(status_msg, title="⚠️ Fallback Active", border_style="yellow"))
 
     state = load_state()
     tutor = BATutor()

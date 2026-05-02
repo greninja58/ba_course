@@ -14,11 +14,13 @@ def get_tutor():
     return BATutor()
 
 # 1. Validate Environment
-valid, error_msg = validate_env()
+valid, status_msg = validate_env()
 if not valid:
-    st.error(error_msg)
+    st.error(status_msg)
     st.info("Please create a `.env` file with your `GEMINI_API_KEY`.")
     st.stop()
+elif status_msg:
+    st.warning(status_msg)
 
 # Initialize session state
 if 'state' not in st.session_state:
