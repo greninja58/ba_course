@@ -1,8 +1,18 @@
 import os
 import subprocess
 import shutil
-from google import genai
-from google.genai import types
+
+try:
+    from google import genai
+    from google.genai import types
+except (ImportError, AttributeError):
+    try:
+        import google.genai as genai
+        from google.genai import types
+    except ImportError:
+        genai = None
+        types = None
+
 import google.api_core.exceptions
 
 SYSTEM_PROMPT = """
