@@ -32,6 +32,10 @@ if 'state' not in st.session_state:
 if 'tutor' not in st.session_state:
     st.session_state.tutor = get_tutor()
 
+# Ensure older cached tutor instances have the new total_tokens attribute
+if not hasattr(st.session_state.tutor, "total_tokens"):
+    st.session_state.tutor.total_tokens = 0
+
 if 'quest_messages' not in st.session_state:
     st.session_state.quest_messages = []
 
@@ -118,8 +122,8 @@ with st.sidebar:
     col1, col2 = st.columns(2)
     col1.metric("🔥 Streak", f"{state.get('streak', 1)} Days")
     
-    # Update total tokens from tutor object
-    state["total_tokens"] = st.session_state.tutor.total_tokens
+    # Update total tokens from tutor object safely (handles cached older instances)
+    state["total_tokens"] = getattr(st.session_state.tutor, "total_tokens", state.get("total_tokens", 0))
     col2.metric("🔢 Tokens", f"{state.get('total_tokens', 0):,}")
     
     # XP & Badges
