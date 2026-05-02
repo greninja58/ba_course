@@ -146,7 +146,12 @@ class BATutor:
             return f"❌ AI Error: {str(e)}"
 
     def get_cat_question(self, skill_theme):
-        prompt = f"Generate a CAT-style aptitude question (QA/DILR/VARC) specifically focusing on '{skill_theme}'. Include 4 options (A, B, C, D) and make it challenging but solvable in 2 minutes."
+        prompt = f"Generate a CAT-style aptitude question (QA/DILR/VARC) specifically focusing on '{skill_theme}'. Include 4 options (A, B, C, D) and make it challenging but solvable in 2 minutes. Clearly label the options."
+        res = self._call_gemini(prompt)
+        return res.text if hasattr(res, 'text') else res
+
+    def evaluate_cat_answer(self, question, user_choice):
+        prompt = f"Question: {question}\n\nUser's Selection: {user_choice}\n\nAnalyze this answer. Tell the user if they are correct, identify the correct option if they were wrong, and provide a clear, step-by-step logic explanation. End with a 'BA Shortcut' or 'CAT Pro-tip'."
         res = self._call_gemini(prompt)
         return res.text if hasattr(res, 'text') else res
 

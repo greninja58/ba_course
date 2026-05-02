@@ -180,12 +180,34 @@ with st.sidebar:
         if st.button("🧠 Quick CAT Question"):
             with st.spinner("Generating question..."):
                 st.session_state.cat_question = st.session_state.tutor.get_cat_question(module['cat_skill'])
+                st.session_state.cat_answer_submitted = False
+                st.session_state.cat_explanation = None
         
         if "cat_question" in st.session_state:
             with st.expander("📝 Practice Question", expanded=True):
                 st.markdown(st.session_state.cat_question)
+                
+                # Answer Selection
+                user_choice = st.radio("Select your answer:", ["A", "B", "C", "D"], key="cat_choice")
+                
+                if not st.session_state.get("cat_answer_submitted", False):
+                    if st.button("Submit Answer"):
+                        with st.spinner("Evaluating..."):
+                            st.session_state.cat_explanation = st.session_state.tutor.evaluate_cat_answer(
+                                st.session_state.cat_question, user_choice
+                            )
+                            st.session_state.cat_answer_submitted = True
+                            st.rerun()
+                
+                # Display Explanation
+                if st.session_state.get("cat_explanation"):
+                    st.write("---")
+                    st.markdown(st.session_state.cat_explanation)
+                
                 if st.button("Close Question"):
                     del st.session_state.cat_question
+                    if "cat_explanation" in st.session_state: del st.session_state.cat_explanation
+                    st.session_state.cat_answer_submitted = False
                     st.rerun()
 
         st.write("---")
